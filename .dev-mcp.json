@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "apk": {
+      "type": "url",
+      "url": "http://localhost:8090/mcp"
+    }
+  }
+}
