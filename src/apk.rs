@@ -4,6 +4,7 @@ use rmcp::{
 };
 use std::sync::Arc;
 
+#[derive(Clone)]
 pub struct Apk {}
 
 #[tool_router]

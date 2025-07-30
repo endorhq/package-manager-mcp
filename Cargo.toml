@@ -3,15 +3,6 @@ name = "package-manager-mcp"
 version = "0.1.0"
 edition = "2024"
 
-[features]
-# Package manager backend selection - determines which package manager this MCP server will interface with
-# For AI models: Use these features to compile the server for different Linux distributions:
-# - "apk": Alpine Linux package manager (default)
-# - Future backends could include "apt", "yum", "pacman", etc.
-# Only one backend can be enabled at compile time for binary size and runtime efficiency
-default = ["apk"]
-apk = []  # Enable APK package manager support for Alpine Linux
-
 [dependencies]
 anyhow = { version = "1.0.98", features = ["backtrace"] }
 axum = "0.8.4"
