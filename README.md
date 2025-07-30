@@ -1,2 +1,2 @@
-# alpine-mcp
-A MCP server to give AI agents control over Alpine installations
+# package-manager-mcp
+A MCP server to give AI agents control over OS package managers.
