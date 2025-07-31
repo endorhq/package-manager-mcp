@@ -252,7 +252,7 @@ impl ServerHandler for Apk {
                 }
             }
             "list_installed_packages" => {
-                let package_list = tokio::task::spawn_blocking(move || list_installed_packages())
+                let package_list = tokio::task::spawn_blocking(list_installed_packages)
                     .await
                     .map_err(|err| {
                         McpError::internal_error(
@@ -266,8 +266,7 @@ impl ServerHandler for Apk {
                         if exec_result.status == 0 {
                             let packages = exec_result.stdout.unwrap_or_default();
                             Ok(CallToolResult::success(vec![Content::text(format!(
-                                "📦 Installed packages:\n{}",
-                                packages
+                                "📦 Installed packages:\n{packages}"
                             ))]))
                         } else {
                             let error_message = format!(
@@ -329,7 +328,7 @@ impl ServerHandler for Apk {
                                         "✓ Search completed for query '{query}' but no packages were found."
                                     )
                                 } else {
-                                    format!("✓ Search results for query '{query}':\n\n{}", stdout)
+                                    format!("✓ Search results for query '{query}':\n\n{stdout}")
                                 }
                             } else {
                                 format!(
