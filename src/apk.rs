@@ -78,6 +78,22 @@ impl ServerHandler for Apk {
                         open_world_hint: Some(true),
                         ..Default::default()
                     }),
+                },
+                Tool {
+                    name: "refresh_repository".into(),
+                    description: Some(std::borrow::Cow::Borrowed("Refresh all Alpine Linux package repository indexes using 'apk update'. This tool synchronizes the local package database with remote repositories, ensuring you have access to the latest package information and versions. Use this before installing packages to get the most up-to-date package lists.")),
+                    input_schema: Arc::new(
+                        serde_json::from_value(serde_json::json!({
+                            "type": "object",
+                            "properties": {},
+                            "required": []
+                        })).unwrap(),
+                    ),
+                    annotations: Some(ToolAnnotations {
+                        idempotent_hint: Some(true),
+                        open_world_hint: Some(true),
+                        ..Default::default()
+                    }),
                 }
             ],
             next_cursor: None,
@@ -246,8 +262,58 @@ impl ServerHandler for Apk {
                     )),
                 }
             }
+            "refresh_repository" => {
+                let repository_refresh = tokio::task::spawn_blocking(move || {
+                    refresh_all_repositories()
+                })
+                .await
+                .map_err(|err| {
+                    McpError::internal_error(
+                        format!("there was an error spawning repository refresh process: {err:?}"),
+                        None,
+                    )
+                })?;
+
+                match repository_refresh {
+                    Ok(exec_result) => {
+                        if exec_result.status == 0 {
+                            let success_message = "✓ All repositories refreshed successfully.";
+                            Ok(CallToolResult::success(vec![Content::text(
+                                success_message,
+                            )]))
+                        } else {
+                            let error_message = format!(
+                                "✗ Failed to refresh repositories (exit code: {})",
+                                exec_result.status
+                            );
+                            let mut error_details = serde_json::json!({
+                                "exit_code": exec_result.status,
+                                "command": "apk update"
+                            });
+
+                            if let Some(stdout) = exec_result.stdout {
+                                error_details["stdout"] = serde_json::Value::String(stdout);
+                            }
+                            if let Some(stderr) = exec_result.stderr {
+                                error_details["stderr"] = serde_json::Value::String(stderr);
+                            }
+
+                            Err(McpError::internal_error(error_message, Some(error_details)))
+                        }
+                    }
+                    Err(err) => Err(McpError::internal_error(
+                        format!(
+                            "✗ System error while refreshing repositories: {err:?}. This may indicate APK is not available or there are permission issues."
+                        ),
+                        Some(serde_json::json!({
+                            "error_type": "system_error",
+                            "suggestion": "Ensure APK package manager is installed and you have sufficient privileges"
+                        })),
+                    )),
+                }
+            }
             _ => Ok(CallToolResult::error(vec![Content::text(format!(
-                "✗ Unknown tool '{}'. Available tools: install_package, refresh_repositories",
+                "✗ Unknown tool '{}'. Available tools: install_package, refresh_repositories, refresh_repository",
                 request.name
             ))])),
         }
@@ -317,6 +383,33 @@ fn refresh_repositories(refresh_options: &RefreshOptions) -> Result<ExecResult, 
     }
 
     let command = command.output();
+
+    let Ok(command) = command else {
+        return Err(McpError::internal_error(
+            "there was an error refreshing repositories".to_string(),
+            None,
+        ));
+    };
+
+    Ok(ExecResult {
+        stdout: if !command.stdout.is_empty() {
+            Some(String::from_utf8_lossy(&command.stdout).to_string())
+        } else {
+            None
+        },
+        stderr: if !command.stderr.is_empty() {
+            Some(String::from_utf8_lossy(&command.stderr).to_string())
+        } else {
+            None
+        },
+        status: command.status.code().expect("exit code is expected"),
+    })
+}
+
+fn refresh_all_repositories() -> Result<ExecResult, McpError> {
+    let command = std::process::Command::new("apk")
+        .arg("update")
+        .output();
 
     let Ok(command) = command else {
         return Err(McpError::internal_error(
