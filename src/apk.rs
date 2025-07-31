@@ -22,7 +22,7 @@ impl ServerHandler for Apk {
                 .enable_tools()
                 .build(),
             server_info: Implementation::from_build_env(),
-            instructions: Some("This MCP server provides Alpine Linux package management capabilities through the APK package manager. Use this server to install, update, and manage packages on Alpine Linux systems. The server executes APK commands with appropriate error handling and provides detailed feedback on operations.".to_string()),
+            instructions: Some("This MCP server provides Alpine Linux package management capabilities through the APK package manager. Use this server to install packages and list installed packages on Alpine Linux systems. The server executes APK commands with appropriate error handling and provides detailed feedback on operations.".to_string()),
         }
     }
 
@@ -55,6 +55,22 @@ impl ServerHandler for Apk {
                     annotations: Some(ToolAnnotations {
                         idempotent_hint: Some(true),
                         open_world_hint: Some(true),
+                        ..Default::default()
+                    }),
+                },
+                Tool {
+                    name: "list_installed_packages".into(),
+                    description: Some(std::borrow::Cow::Borrowed("List all installed packages on Alpine Linux using 'apk list -I'. This tool shows all packages currently installed on the system with their versions and architectures. Use this to audit installed software, check package versions, or verify installations.")),
+                    input_schema: Arc::new(
+                        serde_json::from_value(serde_json::json!({
+                            "type": "object",
+                            "properties": {},
+                            "required": []
+                        })).unwrap(),
+                    ),
+                    annotations: Some(ToolAnnotations {
+                        idempotent_hint: Some(true),
+                        open_world_hint: Some(false),
                         ..Default::default()
                     }),
                 }
@@ -147,8 +163,51 @@ impl ServerHandler for Apk {
                     )),
                 }
             }
+            "list_installed_packages" => {
+                let package_list = tokio::task::spawn_blocking(move || list_installed_packages())
+                    .await
+                    .map_err(|err| {
+                        McpError::internal_error(
+                            format!("there was an error spawning package listing process: {err:?}"),
+                            None,
+                        )
+                    })?;
+
+                match package_list {
+                    Ok(exec_result) => {
+                        if exec_result.status == 0 {
+                            let packages = exec_result.stdout.unwrap_or_default();
+                            Ok(CallToolResult::success(vec![Content::text(
+                                format!("📦 Installed packages:\n{}", packages)
+                            )]))
+                        } else {
+                            let error_message = format!(
+                                "✗ Failed to list installed packages (exit code: {})",
+                                exec_result.status
+                            );
+                            let mut error_details = serde_json::json!({
+                                "exit_code": exec_result.status,
+                                "command": "apk list -I"
+                            });
+
+                            if let Some(stderr) = exec_result.stderr {
+                                error_details["stderr"] = serde_json::Value::String(stderr);
+                            }
+
+                            Err(McpError::internal_error(error_message, Some(error_details)))
+                        }
+                    }
+                    Err(err) => Err(McpError::internal_error(
+                        format!("✗ System error while listing packages: {err:?}"),
+                        Some(serde_json::json!({
+                            "error_type": "system_error",
+                            "suggestion": "Ensure APK package manager is available"
+                        })),
+                    )),
+                }
+            }
             _ => Ok(CallToolResult::error(vec![Content::text(format!(
-                "✗ Unknown tool '{}'. Available tools: install_package",
+                "✗ Unknown tool '{}'. Available tools: install_package, list_installed_packages",
                 request.name
             ))])),
         }
@@ -185,6 +244,34 @@ fn install_package(install_options: &InstallOptions) -> Result<ExecResult, McpEr
                 "there was an error installing package {}",
                 &install_options.package
             ),
+            None,
+        ));
+    };
+
+    Ok(ExecResult {
+        stdout: if !command.stdout.is_empty() {
+            Some(String::from_utf8_lossy(&command.stdout).to_string())
+        } else {
+            None
+        },
+        stderr: if !command.stderr.is_empty() {
+            Some(String::from_utf8_lossy(&command.stderr).to_string())
+        } else {
+            None
+        },
+        status: command.status.code().expect("exit code is expected"),
+    })
+}
+
+fn list_installed_packages() -> Result<ExecResult, McpError> {
+    let command = std::process::Command::new("apk")
+        .arg("list")
+        .arg("-I")
+        .output();
+
+    let Ok(command) = command else {
+        return Err(McpError::internal_error(
+            "there was an error listing installed packages".to_string(),
             None,
         ));
     };
