@@ -177,9 +177,10 @@ impl ServerHandler for Apk {
                     Ok(exec_result) => {
                         if exec_result.status == 0 {
                             let packages = exec_result.stdout.unwrap_or_default();
-                            Ok(CallToolResult::success(vec![Content::text(
-                                format!("📦 Installed packages:\n{}", packages)
-                            )]))
+                            Ok(CallToolResult::success(vec![Content::text(format!(
+                                "📦 Installed packages:\n{}",
+                                packages
+                            ))]))
                         } else {
                             let error_message = format!(
                                 "✗ Failed to list installed packages (exit code: {})",
