@@ -194,12 +194,8 @@ impl ServerHandler for Apk {
                     })
                     .map(|repository| repository.to_string());
 
-                let refresh_options = RefreshOptions {
-                    repository: repository.clone(),
-                };
-
                 let repository_refresh = tokio::task::spawn_blocking(move || {
-                    refresh_repositories(&refresh_options)
+                    refresh_repositories()
                 })
                 .await
                 .map_err(|err| {
@@ -264,7 +260,7 @@ impl ServerHandler for Apk {
             }
             "refresh_repository" => {
                 let repository_refresh = tokio::task::spawn_blocking(move || {
-                    refresh_all_repositories()
+                    refresh_repositories()
                 })
                 .await
                 .map_err(|err| {
@@ -325,10 +321,6 @@ struct InstallOptions {
     repository: Option<String>,
 }
 
-struct RefreshOptions {
-    repository: Option<String>,
-}
-
 struct ExecResult {
     stdout: Option<String>,
     stderr: Option<String>,
@@ -373,43 +365,11 @@ fn install_package(install_options: &InstallOptions) -> Result<ExecResult, McpEr
     })
 }
 
-fn refresh_repositories(refresh_options: &RefreshOptions) -> Result<ExecResult, McpError> {
+fn refresh_repositories() -> Result<ExecResult, McpError> {
     let mut command = std::process::Command::new("apk");
     command.arg("update");
 
-    if let Some(repository) = &refresh_options.repository {
-        command.arg("--repository");
-        command.arg(repository);
-    }
-
     let command = command.output();
-
-    let Ok(command) = command else {
-        return Err(McpError::internal_error(
-            "there was an error refreshing repositories".to_string(),
-            None,
-        ));
-    };
-
-    Ok(ExecResult {
-        stdout: if !command.stdout.is_empty() {
-            Some(String::from_utf8_lossy(&command.stdout).to_string())
-        } else {
-            None
-        },
-        stderr: if !command.stderr.is_empty() {
-            Some(String::from_utf8_lossy(&command.stderr).to_string())
-        } else {
-            None
-        },
-        status: command.status.code().expect("exit code is expected"),
-    })
-}
-
-fn refresh_all_repositories() -> Result<ExecResult, McpError> {
-    let command = std::process::Command::new("apk")
-        .arg("update")
-        .output();
 
     let Ok(command) = command else {
         return Err(McpError::internal_error(
