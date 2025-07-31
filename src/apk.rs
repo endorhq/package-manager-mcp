@@ -182,17 +182,16 @@ impl ServerHandler for Apk {
                     repository: repository.clone(),
                 };
 
-                let repository_refresh =
-                    tokio::task::spawn_blocking(move || refresh_repository(&refresh_options))
-                        .await
-                        .map_err(|err| {
-                            McpError::internal_error(
-                                format!(
-                                    "there was an error spawning repository refresh process: {err:?}"
-                                ),
-                                None,
-                            )
-                        })?;
+                let repository_refresh = tokio::task::spawn_blocking(move || {
+                    refresh_repository(&refresh_options)
+                })
+                .await
+                .map_err(|err| {
+                    McpError::internal_error(
+                        format!("there was an error spawning repository refresh process: {err:?}"),
+                        None,
+                    )
+                })?;
 
                 match repository_refresh {
                     Ok(exec_result) => {
@@ -219,10 +218,10 @@ impl ServerHandler for Apk {
                             };
                             let mut error_details = serde_json::json!({
                                 "exit_code": exec_result.status,
-                                "command": if let Some(repo) = &repository { 
-                                    format!("apk update --repository {}", repo) 
-                                } else { 
-                                    "apk update".to_string() 
+                                "command": if let Some(repo) = &repository {
+                                    format!("apk update --repository {}", repo)
+                                } else {
+                                    "apk update".to_string()
                                 }
                             });
 
