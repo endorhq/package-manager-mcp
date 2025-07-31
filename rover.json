@@ -1,0 +1,19 @@
+{
+  "version": "1.0.4",
+  "createdAt": "2025-07-31T08:07:19.559Z",
+  "environment": {
+    "projectType": "unknown",
+    "packageManager": "unknown",
+    "devEnvironments": [
+      "local"
+    ],
+    "taskManagers": [
+      "make"
+    ],
+    "aiAgents": [
+      "claude"
+    ],
+    "selectedAiAgent": "claude",
+    "instructions": null
+  }
+}
