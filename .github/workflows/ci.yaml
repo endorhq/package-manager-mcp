@@ -26,12 +26,12 @@ jobs:
       - name: Lint
         run: |
           nix develop -c -- make lint
-  tests:
-    name: Tests
+  test:
+    name: Test
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: DeterminateSystems/nix-installer-action@main
-      - name: Lint
+      - name: Test
         run: |
           nix develop -c -- make test
