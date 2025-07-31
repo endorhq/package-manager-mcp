@@ -69,10 +69,6 @@ impl ServerHandler for Apk {
                                     "type": "string",
                                     "description": "Search query for package names or descriptions. Can be a partial package name, keyword, or pattern to search for (e.g., 'python', 'web*', 'dev-tools'). The search will match against package names and descriptions in the Alpine repositories."
                                 },
-                                "repository": {
-                                    "type": "string",
-                                    "description": "Optional: Custom repository URL to search in. Use this when you need to search packages from non-standard repositories or specific Alpine mirrors. Format should be a valid APK repository URL (e.g., 'https://dl-cdn.alpinelinux.org/alpine/edge/testing'). If not provided, the system's default configured repositories will be searched."
-                                },
                             },
                             "required": ["query"]
                         })).unwrap(),
@@ -191,7 +187,6 @@ impl ServerHandler for Apk {
 
                 let search_options = SearchOptions {
                     query: query.clone(),
-                    repository: repository.clone(),
                 };
 
                 let package_search = tokio::task::spawn_blocking(move || {
@@ -272,7 +267,6 @@ struct InstallOptions {
 
 struct SearchOptions {
     query: String,
-    repository: Option<String>,
 }
 
 struct ExecResult {
@@ -322,11 +316,6 @@ fn install_package(install_options: &InstallOptions) -> Result<ExecResult, McpEr
 fn search_package(search_options: &SearchOptions) -> Result<ExecResult, McpError> {
     let mut command = std::process::Command::new("apk");
     command.arg("search");
-
-    if let Some(repository) = &search_options.repository {
-        command.arg("--repository");
-        command.arg(repository);
-    }
 
     command.arg(&search_options.query);
 
