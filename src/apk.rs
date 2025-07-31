@@ -176,10 +176,7 @@ impl ServerHandler for Apk {
                 let query = request
                     .arguments
                     .as_ref()
-                    .and_then(|args| {
-                        args.get("query")
-                            .and_then(|query| query.as_str())
-                    })
+                    .and_then(|args| args.get("query").and_then(|query| query.as_str()))
                     .expect("mandatory argument")
                     .to_string();
 
@@ -197,33 +194,36 @@ impl ServerHandler for Apk {
                     repository: repository.clone(),
                 };
 
-                let package_search =
-                    tokio::task::spawn_blocking(move || search_package(&search_options))
-                        .await
-                        .map_err(|err| {
-                            McpError::internal_error(
-                                format!(
-                                    "there was an error spawning search process for query {query}: {err:?}"
-                                ),
-                                None,
-                            )
-                        })?;
+                let package_search = tokio::task::spawn_blocking(move || {
+                    search_package(&search_options)
+                })
+                .await
+                .map_err(|err| {
+                    McpError::internal_error(
+                        format!(
+                            "there was an error spawning search process for query {query}: {err:?}"
+                        ),
+                        None,
+                    )
+                })?;
 
                 match package_search {
                     Ok(exec_result) => {
                         if exec_result.status == 0 {
                             let search_results = if let Some(stdout) = exec_result.stdout {
                                 if stdout.trim().is_empty() {
-                                    format!("✓ Search completed for query '{query}' but no packages were found.")
+                                    format!(
+                                        "✓ Search completed for query '{query}' but no packages were found."
+                                    )
                                 } else {
                                     format!("✓ Search results for query '{query}':\n\n{}", stdout)
                                 }
                             } else {
-                                format!("✓ Search completed for query '{query}' but no packages were found.")
+                                format!(
+                                    "✓ Search completed for query '{query}' but no packages were found."
+                                )
                             };
-                            Ok(CallToolResult::success(vec![Content::text(
-                                search_results,
-                            )]))
+                            Ok(CallToolResult::success(vec![Content::text(search_results)]))
                         } else {
                             let error_message = format!(
                                 "✗ Failed to search for packages with query '{query}' (exit code: {})",
