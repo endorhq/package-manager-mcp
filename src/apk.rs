@@ -22,7 +22,7 @@ impl ServerHandler for Apk {
                 .enable_tools()
                 .build(),
             server_info: Implementation::from_build_env(),
-            instructions: Some("This MCP server provides Alpine Linux package management capabilities through the APK package manager. Use this server to install, update, and manage packages on Alpine Linux systems. The server executes APK commands with appropriate error handling and provides detailed feedback on operations.".to_string()),
+            instructions: Some("This MCP server provides Alpine Linux package management capabilities through the APK package manager. Use this server to search for, install, update, list installed packages, and manage packages on Alpine Linux systems. The server executes APK commands with appropriate error handling and provides detailed feedback on operations.".to_string()),
         }
     }
 
@@ -66,6 +66,43 @@ impl ServerHandler for Apk {
                             "type": "object",
                             "properties": {},
                             "required": []
+                        })).unwrap(),
+                    ),
+                    annotations: Some(ToolAnnotations {
+                        idempotent_hint: Some(true),
+                        open_world_hint: Some(true),
+                        ..Default::default()
+                    }),
+                },
+                Tool {
+                    name: "list_installed_packages".into(),
+                    description: Some(std::borrow::Cow::Borrowed("List all installed packages on Alpine Linux using 'apk list -I'. This tool shows all packages currently installed on the system with their versions and architectures. Use this to audit installed software, check package versions, or verify installations.")),
+                    input_schema: Arc::new(
+                        serde_json::from_value(serde_json::json!({
+                            "type": "object",
+                            "properties": {},
+                            "required": []
+                        })).unwrap(),
+                    ),
+                    annotations: Some(ToolAnnotations {
+                        idempotent_hint: Some(true),
+                        open_world_hint: Some(false),
+                        ..Default::default()
+                    }),
+                },
+                Tool {
+                    name: "search_package".into(),
+                    description: Some(std::borrow::Cow::Borrowed("Search for Alpine Linux packages using the APK package manager. This tool executes 'apk search' commands to find packages matching your query. Use this when you need to discover available packages, find package names, or explore what software is available in the repositories that are registered in the system.")),
+                    input_schema: Arc::new(
+                        serde_json::from_value(serde_json::json!({
+                            "type": "object",
+                            "properties": {
+                                "query": {
+                                    "type": "string",
+                                    "description": "Search query for package names or descriptions. Can be a partial package name, keyword, or pattern to search for (e.g., 'python', 'web*', 'dev-tools'). The search will match against package names and descriptions in the repositories registered in the system."
+                                },
+                            },
+                            "required": ["query"]
                         })).unwrap(),
                     ),
                     annotations: Some(ToolAnnotations {
@@ -164,15 +201,6 @@ impl ServerHandler for Apk {
                 }
             }
             "refresh_repositories" => {
-                let repository = request
-                    .arguments
-                    .as_ref()
-                    .and_then(|args| {
-                        args.get("repository")
-                            .and_then(|repository| repository.as_str())
-                    })
-                    .map(|repository| repository.to_string());
-
                 let repository_refresh = tokio::task::spawn_blocking(move || {
                     refresh_repositories()
                 })
@@ -187,33 +215,18 @@ impl ServerHandler for Apk {
                 match repository_refresh {
                     Ok(exec_result) => {
                         if exec_result.status == 0 {
-                            let success_message = if let Some(repo) = &repository {
-                                format!("✓ Repository '{}' was refreshed successfully.", repo)
-                            } else {
-                                "✓ All repositories were refreshed successfully.".to_string()
-                            };
+                            let success_message = "✓ All repositories were refreshed successfully.".to_string();
                             Ok(CallToolResult::success(vec![Content::text(
                                 success_message,
                             )]))
                         } else {
-                            let error_message = if let Some(repo) = &repository {
-                                format!(
-                                    "✗ Failed to refresh repository '{}' (exit code: {})",
-                                    repo, exec_result.status
-                                )
-                            } else {
-                                format!(
-                                    "✗ Failed to refresh repositories (exit code: {})",
-                                    exec_result.status
-                                )
-                            };
+                            let error_message = format!(
+                                "✗ Failed to refresh repositories (exit code: {})",
+                                exec_result.status
+                            );
                             let mut error_details = serde_json::json!({
                                 "exit_code": exec_result.status,
-                                "command": if let Some(repo) = &repository {
-                                    format!("apk update --repository {}", repo)
-                                } else {
-                                    "apk update".to_string()
-                                }
+                                "command": "apk update".to_string()
                             });
 
                             if let Some(stdout) = exec_result.stdout {
@@ -237,8 +250,127 @@ impl ServerHandler for Apk {
                     )),
                 }
             }
+            "list_installed_packages" => {
+                let package_list = tokio::task::spawn_blocking(move || list_installed_packages())
+                    .await
+                    .map_err(|err| {
+                        McpError::internal_error(
+                            format!("there was an error spawning package listing process: {err:?}"),
+                            None,
+                        )
+                    })?;
+
+                match package_list {
+                    Ok(exec_result) => {
+                        if exec_result.status == 0 {
+                            let packages = exec_result.stdout.unwrap_or_default();
+                            Ok(CallToolResult::success(vec![Content::text(format!(
+                                "📦 Installed packages:\n{}",
+                                packages
+                            ))]))
+                        } else {
+                            let error_message = format!(
+                                "✗ Failed to list installed packages (exit code: {})",
+                                exec_result.status
+                            );
+                            let mut error_details = serde_json::json!({
+                                "exit_code": exec_result.status,
+                                "command": "apk list -I"
+                            });
+
+                            if let Some(stderr) = exec_result.stderr {
+                                error_details["stderr"] = serde_json::Value::String(stderr);
+                            }
+
+                            Err(McpError::internal_error(error_message, Some(error_details)))
+                        }
+                    }
+                    Err(err) => Err(McpError::internal_error(
+                        format!("✗ System error while listing packages: {err:?}"),
+                        Some(serde_json::json!({
+                            "error_type": "system_error",
+                            "suggestion": "Ensure APK package manager is available"
+                        })),
+                    )),
+                }
+            }
+            "search_package" => {
+                let query = request
+                    .arguments
+                    .as_ref()
+                    .and_then(|args| args.get("query").and_then(|query| query.as_str()))
+                    .expect("mandatory argument")
+                    .to_string();
+
+                let search_options = SearchOptions {
+                    query: query.clone(),
+                };
+
+                let package_search = tokio::task::spawn_blocking(move || {
+                    search_package(&search_options)
+                })
+                .await
+                .map_err(|err| {
+                    McpError::internal_error(
+                        format!(
+                            "there was an error spawning search process for query {query}: {err:?}"
+                        ),
+                        None,
+                    )
+                })?;
+
+                match package_search {
+                    Ok(exec_result) => {
+                        if exec_result.status == 0 {
+                            let search_results = if let Some(stdout) = exec_result.stdout {
+                                if stdout.trim().is_empty() {
+                                    format!(
+                                        "✓ Search completed for query '{query}' but no packages were found."
+                                    )
+                                } else {
+                                    format!("✓ Search results for query '{query}':\n\n{}", stdout)
+                                }
+                            } else {
+                                format!(
+                                    "✓ Search completed for query '{query}' but no packages were found."
+                                )
+                            };
+                            Ok(CallToolResult::success(vec![Content::text(search_results)]))
+                        } else {
+                            let error_message = format!(
+                                "✗ Failed to search for packages with query '{query}' (exit code: {})",
+                                exec_result.status
+                            );
+                            let mut error_details = serde_json::json!({
+                                "query": query,
+                                "exit_code": exec_result.status,
+                                "command": format!("apk search {}", query.clone())
+                            });
+
+                            if let Some(stdout) = exec_result.stdout {
+                                error_details["stdout"] = serde_json::Value::String(stdout);
+                            }
+                            if let Some(stderr) = exec_result.stderr {
+                                error_details["stderr"] = serde_json::Value::String(stderr);
+                            }
+
+                            Err(McpError::internal_error(error_message, Some(error_details)))
+                        }
+                    }
+                    Err(err) => Err(McpError::internal_error(
+                        format!(
+                            "✗ System error while searching for packages with query '{query}': {err:?}. This may indicate APK is not available or there are permission issues."
+                        ),
+                        Some(serde_json::json!({
+                            "query": query,
+                            "error_type": "system_error",
+                            "suggestion": "Ensure APK package manager is installed and you have sufficient privileges"
+                        })),
+                    )),
+                }
+            }
             _ => Ok(CallToolResult::error(vec![Content::text(format!(
-                "✗ Unknown tool '{}'. Available tools: install_package, refresh_repositories",
+                "✗ Unknown tool '{}'. Available tools: install_package, refresh_repositories, list_installed_packages, search_package",
                 request.name
             ))])),
         }
@@ -248,6 +380,10 @@ impl ServerHandler for Apk {
 struct InstallOptions {
     package: String,
     repository: Option<String>,
+}
+
+struct SearchOptions {
+    query: String,
 }
 
 struct ExecResult {
@@ -303,6 +439,67 @@ fn refresh_repositories() -> Result<ExecResult, McpError> {
     let Ok(command) = command else {
         return Err(McpError::internal_error(
             "there was an error refreshing repositories".to_string(),
+            None,
+        ));
+    };
+
+    Ok(ExecResult {
+        stdout: if !command.stdout.is_empty() {
+            Some(String::from_utf8_lossy(&command.stdout).to_string())
+        } else {
+            None
+        },
+        stderr: if !command.stderr.is_empty() {
+            Some(String::from_utf8_lossy(&command.stderr).to_string())
+        } else {
+            None
+        },
+        status: command.status.code().expect("exit code is expected"),
+    })
+}
+
+fn list_installed_packages() -> Result<ExecResult, McpError> {
+    let command = std::process::Command::new("apk")
+        .arg("list")
+        .arg("-I")
+        .output();
+
+    let Ok(command) = command else {
+        return Err(McpError::internal_error(
+            "there was an error listing installed packages".to_string(),
+            None,
+        ));
+    };
+
+    Ok(ExecResult {
+        stdout: if !command.stdout.is_empty() {
+            Some(String::from_utf8_lossy(&command.stdout).to_string())
+        } else {
+            None
+        },
+        stderr: if !command.stderr.is_empty() {
+            Some(String::from_utf8_lossy(&command.stderr).to_string())
+        } else {
+            None
+        },
+        status: command.status.code().expect("exit code is expected"),
+    })
+}
+
+fn search_package(search_options: &SearchOptions) -> Result<ExecResult, McpError> {
+    let mut command = std::process::Command::new("apk");
+    command.arg("search");
+
+    command.arg(&search_options.query);
+
+    let command = command.output();
+
+    let Ok(command) = command else {
+        return Err(McpError::internal_error(
+            format!(
+                "there was an error searching for packages with query {}",
+                &search_options.query
+            ),
             None,
         ));
     };
