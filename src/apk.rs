@@ -183,7 +183,7 @@ impl ServerHandler for Apk {
                 };
 
                 let repository_refresh = tokio::task::spawn_blocking(move || {
-                    refresh_repository(&refresh_options)
+                    refresh_repositories(&refresh_options)
                 })
                 .await
                 .map_err(|err| {
@@ -307,7 +307,7 @@ fn install_package(install_options: &InstallOptions) -> Result<ExecResult, McpEr
     })
 }
 
-fn refresh_repository(refresh_options: &RefreshOptions) -> Result<ExecResult, McpError> {
+fn refresh_repositories(refresh_options: &RefreshOptions) -> Result<ExecResult, McpError> {
     let mut command = std::process::Command::new("apk");
     command.arg("update");
 
