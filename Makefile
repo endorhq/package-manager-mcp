@@ -4,6 +4,22 @@ TARGET ?= x86_64-unknown-linux-musl
 build:
 	cargo build --target=$(TARGET)
 
+.PHONY: fmt
+fmt:
+	cargo fmt
+
+.PHONY: nix-fmt
+nix-fmt:
+	find . -name "*.nix" | xargs alejandra
+
+.PHONY: lint
+lint:
+	cargo clippy
+
+.PHONY: test
+test:
+	cargo test
+
 .PHONY: run-%
 run-%: build
 	docker rm -f package-manager-mcp 2> /dev/null || true
