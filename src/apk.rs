@@ -176,15 +176,6 @@ impl ServerHandler for Apk {
                     .expect("mandatory argument")
                     .to_string();
 
-                let repository = request
-                    .arguments
-                    .as_ref()
-                    .and_then(|args| {
-                        args.get("repository")
-                            .and_then(|repository| repository.as_str())
-                    })
-                    .map(|repository| repository.to_string());
-
                 let search_options = SearchOptions {
                     query: query.clone(),
                 };
@@ -227,7 +218,7 @@ impl ServerHandler for Apk {
                             let mut error_details = serde_json::json!({
                                 "query": query,
                                 "exit_code": exec_result.status,
-                                "command": format!("apk search {}", if let Some(repo) = &repository { format!("--repository {repo} {query}") } else { query.clone() })
+                                "command": format!("apk search {}", query.clone())
                             });
 
                             if let Some(stdout) = exec_result.stdout {
