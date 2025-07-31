@@ -215,7 +215,8 @@ impl ServerHandler for Apk {
                 match repository_refresh {
                     Ok(exec_result) => {
                         if exec_result.status == 0 {
-                            let success_message = "✓ All repositories were refreshed successfully.".to_string();
+                            let success_message =
+                                "✓ All repositories were refreshed successfully.".to_string();
                             Ok(CallToolResult::success(vec![Content::text(
                                 success_message,
                             )]))
