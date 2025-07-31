@@ -60,7 +60,7 @@ impl ServerHandler for Apk {
                 },
                 Tool {
                     name: "refresh_repositories".into(),
-                    description: Some(std::borrow::Cow::Borrowed("Refresh Alpine Linux package repository indexes using 'apk update'. This tool synchronizes the local package database with remote repositories, ensuring you have access to the latest package information and versions. Use this before installing packages to get the most up-to-date package lists.")),
+                    description: Some(std::borrow::Cow::Borrowed("Refresh registered repository indexes using 'apk update'. This tool synchronizes the local package database with remote repositories, ensuring you have access to the latest package information and versions. Use this before installing packages to get the most up-to-date package lists.")),
                     input_schema: Arc::new(
                         serde_json::from_value(serde_json::json!({
                             "type": "object",
@@ -370,7 +370,7 @@ impl ServerHandler for Apk {
                 }
             }
             _ => Ok(CallToolResult::error(vec![Content::text(format!(
-                "✗ Unknown tool '{}'. Available tools: install_package, refresh_repositories, list_installed_packages, search_package",
+                "✗ Unknown tool '{}'. Available tools: install_package, list_installed_packages, refresh_repositories, search_package",
                 request.name
             ))])),
         }
