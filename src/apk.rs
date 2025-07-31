@@ -60,14 +60,14 @@ impl ServerHandler for Apk {
                 },
                 Tool {
                     name: "search_package".into(),
-                    description: Some(std::borrow::Cow::Borrowed("Search for Alpine Linux packages using the APK package manager. This tool executes 'apk search' commands to find packages matching your query. Use this when you need to discover available packages, find package names, or explore what software is available in Alpine repositories. The tool supports both official Alpine repositories and custom repository URLs.")),
+                    description: Some(std::borrow::Cow::Borrowed("Search for Alpine Linux packages using the APK package manager. This tool executes 'apk search' commands to find packages matching your query. Use this when you need to discover available packages, find package names, or explore what software is available in the repositories that are registered in the system.")),
                     input_schema: Arc::new(
                         serde_json::from_value(serde_json::json!({
                             "type": "object",
                             "properties": {
                                 "query": {
                                     "type": "string",
-                                    "description": "Search query for package names or descriptions. Can be a partial package name, keyword, or pattern to search for (e.g., 'python', 'web*', 'dev-tools'). The search will match against package names and descriptions in the Alpine repositories."
+                                    "description": "Search query for package names or descriptions. Can be a partial package name, keyword, or pattern to search for (e.g., 'python', 'web*', 'dev-tools'). The search will match against package names and descriptions in the repositories registered in the system."
                                 },
                             },
                             "required": ["query"]
