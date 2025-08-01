@@ -13,7 +13,6 @@ jobs:
       matrix:
         target:
           - x86_64-unknown-linux-musl
-          - aarch64-unknown-linux-musl
 
     steps:
       - name: Checkout code
@@ -40,7 +39,7 @@ jobs:
           cp target/${{ matrix.target }}/release/package-manager-mcp artifacts/package-manager-mcp-${{ matrix.target }}
           chmod +x artifacts/package-manager-mcp-${{ matrix.target }}
 
-      - name: Upload release asset
+      - name: Upload release assets
         uses: actions/upload-release-asset@v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
