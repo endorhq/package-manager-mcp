@@ -28,13 +28,20 @@ jobs:
           toolchain: stable
           target: ${{ matrix.target }}
 
-      - name: Install musl
+      - name: Install musl and cross-compilation tools
         run: |
           sudo apt-get update
-          sudo apt-get install -y musl-tools
+          sudo apt-get install -y musl-tools clang
 
       - name: Build for target
         run: |
+          if [ "${{ matrix.target }}" = "aarch64-unknown-linux-musl" ]; then
+            export CARGO_TARGET_AARCH64_UNKNOWN_LINUX_MUSL_LINKER=clang
+            export CC_aarch64_unknown_linux_musl=clang
+            export CXX_aarch64_unknown_linux_musl=clang++
+            export CFLAGS_aarch64_unknown_linux_musl="--target=aarch64-unknown-linux-musl"
+            export CXXFLAGS_aarch64_unknown_linux_musl="--target=aarch64-unknown-linux-musl"
+          fi
           cargo build --release --target ${{ matrix.target }}
 
       - name: Prepare binary
