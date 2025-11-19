@@ -651,6 +651,10 @@ fn install_package_with_version(options: &InstallVersionOptions) -> Result<ExecR
     let repositories = vec![
         "https://dl-cdn.alpinelinux.org/alpine/edge/main",
         "https://dl-cdn.alpinelinux.org/alpine/edge/community",
+        // Current version
+        "https://dl-cdn.alpinelinux.org/alpine/v3.22/main",
+        "https://dl-cdn.alpinelinux.org/alpine/v3.22/community",
+        // New versions
         "https://dl-cdn.alpinelinux.org/alpine/v3.21/main",
         "https://dl-cdn.alpinelinux.org/alpine/v3.21/community",
         "https://dl-cdn.alpinelinux.org/alpine/v3.20/main",
@@ -672,6 +676,10 @@ fn install_package_with_version(options: &InstallVersionOptions) -> Result<ExecR
     let mut matched_repository: Option<String> = None;
 
     for repo in &repositories {
+        if matched_repository.is_some() {
+            break; // Stop searching if we already found the exact version
+        }
+
         let mut search_cmd = std::process::Command::new("apk");
         search_cmd.arg("search");
         search_cmd.arg("--exact");
