@@ -239,10 +239,7 @@ impl ServerHandler for Apk {
                 let version = request
                     .arguments
                     .as_ref()
-                    .and_then(|args| {
-                        args.get("version")
-                            .and_then(|version| version.as_str())
-                    })
+                    .and_then(|args| args.get("version").and_then(|version| version.as_str()))
                     .expect("mandatory argument")
                     .to_string();
 
@@ -266,8 +263,9 @@ impl ServerHandler for Apk {
                 match package_installation {
                     Ok(exec_result) => {
                         if exec_result.status == 0 {
-                            let success_message =
-                                format!("✓ Package '{package}' version '{version}' was installed successfully.");
+                            let success_message = format!(
+                                "✓ Package '{package}' version '{version}' was installed successfully."
+                            );
                             Ok(CallToolResult::success(vec![Content::text(
                                 success_message,
                             )]))
@@ -622,14 +620,19 @@ fn search_package(search_options: &SearchOptions) -> Result<ExecResult, McpError
 
 fn validate_package_version_input(input: &str) -> bool {
     // Allow alphanumeric, dots, hyphens, underscores, and plus signs (common in version strings)
-    input.chars().all(|c| c.is_alphanumeric() || c == '.' || c == '-' || c == '_' || c == '+')
+    input
+        .chars()
+        .all(|c| c.is_alphanumeric() || c == '.' || c == '-' || c == '_' || c == '+')
 }
 
 fn install_package_with_version(options: &InstallVersionOptions) -> Result<ExecResult, McpError> {
     // Validate inputs to prevent command injection
     if !validate_package_version_input(&options.package) {
         return Err(McpError::internal_error(
-            format!("Invalid package name '{}': only alphanumeric characters, dots, hyphens, underscores, and plus signs are allowed", options.package),
+            format!(
+                "Invalid package name '{}': only alphanumeric characters, dots, hyphens, underscores, and plus signs are allowed",
+                options.package
+            ),
             Some(serde_json::json!({
                 "package_name": options.package,
                 "error_type": "validation_error"
@@ -639,7 +642,10 @@ fn install_package_with_version(options: &InstallVersionOptions) -> Result<ExecR
 
     if !validate_package_version_input(&options.version) {
         return Err(McpError::internal_error(
-            format!("Invalid version string '{}': only alphanumeric characters, dots, hyphens, underscores, and plus signs are allowed", options.version),
+            format!(
+                "Invalid version string '{}': only alphanumeric characters, dots, hyphens, underscores, and plus signs are allowed",
+                options.version
+            ),
             Some(serde_json::json!({
                 "version": options.version,
                 "error_type": "validation_error"
