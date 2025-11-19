@@ -59,6 +59,31 @@ impl ServerHandler for Apk {
                     }),
                 },
                 Tool {
+                    name: "install_package_with_version".into(),
+                    description: Some(std::borrow::Cow::Borrowed("Install a specific version of an Alpine Linux package. This tool searches across multiple Alpine repositories (edge, v3.21 down to v3.15) to find the requested package version, then installs it using exact version matching with 'apk add package=version'. Use this when you need to install a specific version of a package rather than the latest available version.")),
+                    input_schema: Arc::new(
+                        serde_json::from_value(serde_json::json!({
+                            "type": "object",
+                            "properties": {
+                                "package_name": {
+                                    "type": "string",
+                                    "description": "The exact name of the Alpine Linux package to install (e.g., 'curl', 'python3', 'git'). Package names are case-sensitive and should match the official package names in Alpine repositories."
+                                },
+                                "version": {
+                                    "type": "string",
+                                    "description": "The specific version of the package to install (e.g., '7.88.1-r1', '3.11.6-r0'). The version string must match exactly as it appears in the repository. If no exact match is found, the tool will return a list of available versions."
+                                },
+                            },
+                            "required": ["package_name", "version"]
+                        })).unwrap(),
+                    ),
+                    annotations: Some(ToolAnnotations {
+                        idempotent_hint: Some(true),
+                        open_world_hint: Some(true),
+                        ..Default::default()
+                    }),
+                },
+                Tool {
                     name: "refresh_repositories".into(),
                     description: Some(std::borrow::Cow::Borrowed("Refresh registered repository indexes using 'apk update'. This tool synchronizes the local package database with remote repositories, ensuring you have access to the latest package information and versions. Use this before installing packages to get the most up-to-date package lists.")),
                     input_schema: Arc::new(
@@ -198,6 +223,77 @@ impl ServerHandler for Apk {
                             "suggestion": "Ensure APK package manager is installed and you have sufficient privileges"
                         })),
                     )),
+                }
+            }
+            "install_package_with_version" => {
+                let package = request
+                    .arguments
+                    .as_ref()
+                    .and_then(|args| {
+                        args.get("package_name")
+                            .and_then(|package_name| package_name.as_str())
+                    })
+                    .expect("mandatory argument")
+                    .to_string();
+
+                let version = request
+                    .arguments
+                    .as_ref()
+                    .and_then(|args| {
+                        args.get("version")
+                            .and_then(|version| version.as_str())
+                    })
+                    .expect("mandatory argument")
+                    .to_string();
+
+                let install_version_options = InstallVersionOptions {
+                    package: package.clone(),
+                    version: version.clone(),
+                };
+
+                let package_installation =
+                    tokio::task::spawn_blocking(move || install_package_with_version(&install_version_options))
+                        .await
+                        .map_err(|err| {
+                            McpError::internal_error(
+                                format!(
+                                    "there was an error spawning installation process for package {package}={version}: {err:?}"
+                                ),
+                                None,
+                            )
+                        })?;
+
+                match package_installation {
+                    Ok(exec_result) => {
+                        if exec_result.status == 0 {
+                            let success_message =
+                                format!("✓ Package '{package}' version '{version}' was installed successfully.");
+                            Ok(CallToolResult::success(vec![Content::text(
+                                success_message,
+                            )]))
+                        } else {
+                            let error_message = format!(
+                                "✗ Failed to install package '{package}' version '{version}' (exit code: {})",
+                                exec_result.status
+                            );
+                            let mut error_details = serde_json::json!({
+                                "package_name": package,
+                                "version": version,
+                                "exit_code": exec_result.status,
+                                "command": format!("apk add {}={}", package, version)
+                            });
+
+                            if let Some(stdout) = exec_result.stdout {
+                                error_details["stdout"] = serde_json::Value::String(stdout);
+                            }
+                            if let Some(stderr) = exec_result.stderr {
+                                error_details["stderr"] = serde_json::Value::String(stderr);
+                            }
+
+                            Err(McpError::internal_error(error_message, Some(error_details)))
+                        }
+                    }
+                    Err(err) => Err(err),
                 }
             }
             "refresh_repositories" => {
@@ -370,7 +466,7 @@ impl ServerHandler for Apk {
                 }
             }
             _ => Ok(CallToolResult::error(vec![Content::text(format!(
-                "✗ Unknown tool '{}'. Available tools: install_package, list_installed_packages, refresh_repositories, search_package",
+                "✗ Unknown tool '{}'. Available tools: install_package, install_package_with_version, list_installed_packages, refresh_repositories, search_package",
                 request.name
             ))])),
         }
@@ -384,6 +480,11 @@ struct InstallOptions {
 
 struct SearchOptions {
     query: String,
+}
+
+struct InstallVersionOptions {
+    package: String,
+    version: String,
 }
 
 struct ExecResult {
@@ -517,4 +618,153 @@ fn search_package(search_options: &SearchOptions) -> Result<ExecResult, McpError
         },
         status: command.status.code().expect("exit code is expected"),
     })
+}
+
+fn validate_package_version_input(input: &str) -> bool {
+    // Allow alphanumeric, dots, hyphens, underscores, and plus signs (common in version strings)
+    input.chars().all(|c| c.is_alphanumeric() || c == '.' || c == '-' || c == '_' || c == '+')
+}
+
+fn install_package_with_version(options: &InstallVersionOptions) -> Result<ExecResult, McpError> {
+    // Validate inputs to prevent command injection
+    if !validate_package_version_input(&options.package) {
+        return Err(McpError::internal_error(
+            format!("Invalid package name '{}': only alphanumeric characters, dots, hyphens, underscores, and plus signs are allowed", options.package),
+            Some(serde_json::json!({
+                "package_name": options.package,
+                "error_type": "validation_error"
+            })),
+        ));
+    }
+
+    if !validate_package_version_input(&options.version) {
+        return Err(McpError::internal_error(
+            format!("Invalid version string '{}': only alphanumeric characters, dots, hyphens, underscores, and plus signs are allowed", options.version),
+            Some(serde_json::json!({
+                "version": options.version,
+                "error_type": "validation_error"
+            })),
+        ));
+    }
+
+    // Define repositories to search across
+    let repositories = vec![
+        "https://dl-cdn.alpinelinux.org/alpine/edge/main",
+        "https://dl-cdn.alpinelinux.org/alpine/edge/community",
+        "https://dl-cdn.alpinelinux.org/alpine/v3.21/main",
+        "https://dl-cdn.alpinelinux.org/alpine/v3.21/community",
+        "https://dl-cdn.alpinelinux.org/alpine/v3.20/main",
+        "https://dl-cdn.alpinelinux.org/alpine/v3.20/community",
+        "https://dl-cdn.alpinelinux.org/alpine/v3.19/main",
+        "https://dl-cdn.alpinelinux.org/alpine/v3.19/community",
+        "https://dl-cdn.alpinelinux.org/alpine/v3.18/main",
+        "https://dl-cdn.alpinelinux.org/alpine/v3.18/community",
+        "https://dl-cdn.alpinelinux.org/alpine/v3.17/main",
+        "https://dl-cdn.alpinelinux.org/alpine/v3.17/community",
+        "https://dl-cdn.alpinelinux.org/alpine/v3.16/main",
+        "https://dl-cdn.alpinelinux.org/alpine/v3.16/community",
+        "https://dl-cdn.alpinelinux.org/alpine/v3.15/main",
+        "https://dl-cdn.alpinelinux.org/alpine/v3.15/community",
+    ];
+
+    // Search for the exact package version across all repositories
+    let mut found_versions: Vec<(String, String)> = Vec::new(); // (version, repository)
+    let mut matched_repository: Option<String> = None;
+
+    for repo in &repositories {
+        let mut search_cmd = std::process::Command::new("apk");
+        search_cmd.arg("search");
+        search_cmd.arg("--exact");
+        search_cmd.arg("--repository");
+        search_cmd.arg(repo);
+        search_cmd.arg(&options.package);
+
+        if let Ok(output) = search_cmd.output() {
+            if output.status.success() {
+                let stdout = String::from_utf8_lossy(&output.stdout);
+                for line in stdout.lines() {
+                    // Parse package-version from output
+                    // Format is typically: package-name-version
+                    if let Some(version_str) = line.strip_prefix(&format!("{}-", options.package)) {
+                        found_versions.push((version_str.to_string(), repo.to_string()));
+
+                        // Check for exact version match
+                        if version_str == options.version {
+                            matched_repository = Some(repo.to_string());
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // If exact version match found, install it
+    if let Some(repo) = matched_repository {
+        let mut install_cmd = std::process::Command::new("apk");
+        install_cmd.arg("add");
+        install_cmd.arg("--repository");
+        install_cmd.arg(&repo);
+        install_cmd.arg(format!("{}={}", options.package, options.version));
+
+        let output = install_cmd.output().map_err(|err| {
+            McpError::internal_error(
+                format!(
+                    "there was an error installing package {}={}: {}",
+                    options.package, options.version, err
+                ),
+                None,
+            )
+        })?;
+
+        return Ok(ExecResult {
+            stdout: if !output.stdout.is_empty() {
+                Some(String::from_utf8_lossy(&output.stdout).to_string())
+            } else {
+                None
+            },
+            stderr: if !output.stderr.is_empty() {
+                Some(String::from_utf8_lossy(&output.stderr).to_string())
+            } else {
+                None
+            },
+            status: output.status.code().expect("exit code is expected"),
+        });
+    }
+
+    // Version not found - return error with available versions
+    if found_versions.is_empty() {
+        return Err(McpError::internal_error(
+            format!(
+                "Package '{}' not found in any searched repository",
+                options.package
+            ),
+            Some(serde_json::json!({
+                "package_name": options.package,
+                "requested_version": options.version,
+                "error_type": "package_not_found",
+                "searched_repositories": repositories
+            })),
+        ));
+    }
+
+    // Remove duplicates and format available versions
+    found_versions.sort();
+    found_versions.dedup_by(|a, b| a.0 == b.0);
+
+    let available_versions: Vec<String> = found_versions.iter().map(|(v, _)| v.clone()).collect();
+
+    Err(McpError::internal_error(
+        format!(
+            "Version '{}' of package '{}' not found. Available versions: {}",
+            options.version,
+            options.package,
+            available_versions.join(", ")
+        ),
+        Some(serde_json::json!({
+            "package_name": options.package,
+            "requested_version": options.version,
+            "available_versions": available_versions,
+            "error_type": "version_not_found"
+        })),
+    ))
 }
