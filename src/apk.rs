@@ -35,7 +35,7 @@ impl ServerHandler for Apk {
             tools: vec![
                 Tool {
                     name: "install_package".into(),
-                    description: Some(std::borrow::Cow::Borrowed("Install Alpine Linux packages using the APK package manager. This tool executes 'apk add' commands with proper error handling. Use this when you need to install software packages, libraries, or development tools on Alpine Linux systems. The tool supports both official Alpine repositories and custom repository URLs.")),
+                    description: Some(std::borrow::Cow::Borrowed("Install Alpine Linux packages using the APK package manager. This tool executes 'apk add' commands with proper error handling. Use this when you need to install the latest version of software packages, libraries, or development tools on Alpine Linux systems. If you need to install a specific version, use the install_package_with_version tool.")),
                     input_schema: Arc::new(
                         serde_json::from_value(serde_json::json!({
                             "type": "object",
@@ -60,7 +60,7 @@ impl ServerHandler for Apk {
                 },
                 Tool {
                     name: "install_package_with_version".into(),
-                    description: Some(std::borrow::Cow::Borrowed("Install a specific version of an Alpine Linux package. This tool searches across multiple Alpine repositories (edge, v3.21 down to v3.15) to find the requested package version, then installs it using exact version matching with 'apk add package=version'. Use this when you need to install a specific version of a package rather than the latest available version.")),
+                    description: Some(std::borrow::Cow::Borrowed("Install a specific version of an Alpine Linux package. This tool searches across multiple Alpine repositories to find the requested package version, then installs it using exact version matching with 'apk add package=version'. Use this when you need to install a specific version of a package rather than the latest available version.")),
                     input_schema: Arc::new(
                         serde_json::from_value(serde_json::json!({
                             "type": "object",
@@ -117,14 +117,18 @@ impl ServerHandler for Apk {
                 },
                 Tool {
                     name: "search_package".into(),
-                    description: Some(std::borrow::Cow::Borrowed("Search for Alpine Linux packages using the APK package manager. This tool executes 'apk search' commands to find packages matching your query. Use this when you need to discover available packages, find package names, or explore what software is available in the repositories that are registered in the system.")),
+                    description: Some(std::borrow::Cow::Borrowed("Search for Alpine Linux packages using the APK package manager. This tool executes 'apk search' commands to find packages matching your query. Use this when you need to discover available packages, find package names, or explore what software is available in the different alpine repositories.")),
                     input_schema: Arc::new(
                         serde_json::from_value(serde_json::json!({
                             "type": "object",
                             "properties": {
                                 "query": {
                                     "type": "string",
-                                    "description": "Search query for package names or descriptions. Can be a partial package name, keyword, or pattern to search for (e.g., 'python', 'web*', 'dev-tools'). The search will match against package names and descriptions in the repositories registered in the system."
+                                    "description": "Package name pattern to search for. Use exact package names (e.g., 'ruby', 'python3') or wildcard patterns (e.g., 'ruby*', 'python*') to match multiple packages. If you don't know the package name, try with specific package names first to avoid excessive output and continue with wildcards if you don't find it."
+                                },
+                                "repository": {
+                                    "type": "string",
+                                    "description": "Optional: Specific repository URL to search in. If not provided, the search will query across multiple Alpine repositories (edge, v3.22, v3.21, v3.20, etc.) to find all available versions of matching packages."
                                 },
                             },
                             "required": ["query"]
@@ -396,8 +400,18 @@ impl ServerHandler for Apk {
                     .expect("mandatory argument")
                     .to_string();
 
+                let repository = request
+                    .arguments
+                    .as_ref()
+                    .and_then(|args| {
+                        args.get("repository")
+                            .and_then(|repository| repository.as_str())
+                    })
+                    .map(|repository| repository.to_string());
+
                 let search_options = SearchOptions {
                     query: query.clone(),
+                    repository: repository.clone(),
                 };
 
                 let package_search = tokio::task::spawn_blocking(move || {
@@ -422,7 +436,16 @@ impl ServerHandler for Apk {
                                         "✓ Search completed for query '{query}' but no packages were found."
                                     )
                                 } else {
-                                    format!("✓ Search results for query '{query}':\n\n{stdout}")
+                                    // Clean up `fetch` lines from output
+                                    let cleaned_stdout = stdout
+                                        .lines()
+                                        .filter(|line| !line.starts_with("fetch "))
+                                        .collect::<Vec<&str>>()
+                                        .join("\n");
+
+                                    format!(
+                                        "✓ Search results for query '{query}':\n\n{cleaned_stdout}"
+                                    )
                                 }
                             } else {
                                 format!(
@@ -478,6 +501,7 @@ struct InstallOptions {
 
 struct SearchOptions {
     query: String,
+    repository: Option<String>,
 }
 
 struct InstallVersionOptions {
@@ -490,6 +514,30 @@ struct ExecResult {
     stderr: Option<String>,
     status: i32,
 }
+
+/// List of repositories to search across
+const SEARCH_REPOSITORIES: &[&str] = &[
+    "https://dl-cdn.alpinelinux.org/alpine/edge/main",
+    "https://dl-cdn.alpinelinux.org/alpine/edge/community",
+    // Current version
+    "https://dl-cdn.alpinelinux.org/alpine/v3.22/main",
+    "https://dl-cdn.alpinelinux.org/alpine/v3.22/community",
+    // Older versions
+    "https://dl-cdn.alpinelinux.org/alpine/v3.21/main",
+    "https://dl-cdn.alpinelinux.org/alpine/v3.21/community",
+    "https://dl-cdn.alpinelinux.org/alpine/v3.20/main",
+    "https://dl-cdn.alpinelinux.org/alpine/v3.20/community",
+    "https://dl-cdn.alpinelinux.org/alpine/v3.19/main",
+    "https://dl-cdn.alpinelinux.org/alpine/v3.19/community",
+    "https://dl-cdn.alpinelinux.org/alpine/v3.18/main",
+    "https://dl-cdn.alpinelinux.org/alpine/v3.18/community",
+    "https://dl-cdn.alpinelinux.org/alpine/v3.17/main",
+    "https://dl-cdn.alpinelinux.org/alpine/v3.17/community",
+    "https://dl-cdn.alpinelinux.org/alpine/v3.16/main",
+    "https://dl-cdn.alpinelinux.org/alpine/v3.16/community",
+    "https://dl-cdn.alpinelinux.org/alpine/v3.15/main",
+    "https://dl-cdn.alpinelinux.org/alpine/v3.15/community",
+];
 
 fn install_package(install_options: &InstallOptions) -> Result<ExecResult, McpError> {
     let mut command = std::process::Command::new("apk");
@@ -587,8 +635,23 @@ fn list_installed_packages() -> Result<ExecResult, McpError> {
 
 fn search_package(search_options: &SearchOptions) -> Result<ExecResult, McpError> {
     let mut command = std::process::Command::new("apk");
-    command.arg("search");
+    command.arg("--no-cache");
 
+    // Add repositories: use provided repository or search all
+    if let Some(repository) = &search_options.repository {
+        command.arg("--repository");
+        command.arg(repository);
+    } else {
+        // Search across all repositories
+        for repo in SEARCH_REPOSITORIES {
+            command.arg("--repository");
+            command.arg(repo);
+        }
+    }
+
+    command.arg("search");
+    command.arg("--exact");
+    command.arg("--all");
     command.arg(&search_options.query);
 
     let command = command.output();
@@ -653,71 +716,49 @@ fn install_package_with_version(options: &InstallVersionOptions) -> Result<ExecR
         ));
     }
 
-    // Define repositories to search across
-    let repositories = vec![
-        "https://dl-cdn.alpinelinux.org/alpine/edge/main",
-        "https://dl-cdn.alpinelinux.org/alpine/edge/community",
-        // Current version
-        "https://dl-cdn.alpinelinux.org/alpine/v3.22/main",
-        "https://dl-cdn.alpinelinux.org/alpine/v3.22/community",
-        // New versions
-        "https://dl-cdn.alpinelinux.org/alpine/v3.21/main",
-        "https://dl-cdn.alpinelinux.org/alpine/v3.21/community",
-        "https://dl-cdn.alpinelinux.org/alpine/v3.20/main",
-        "https://dl-cdn.alpinelinux.org/alpine/v3.20/community",
-        "https://dl-cdn.alpinelinux.org/alpine/v3.19/main",
-        "https://dl-cdn.alpinelinux.org/alpine/v3.19/community",
-        "https://dl-cdn.alpinelinux.org/alpine/v3.18/main",
-        "https://dl-cdn.alpinelinux.org/alpine/v3.18/community",
-        "https://dl-cdn.alpinelinux.org/alpine/v3.17/main",
-        "https://dl-cdn.alpinelinux.org/alpine/v3.17/community",
-        "https://dl-cdn.alpinelinux.org/alpine/v3.16/main",
-        "https://dl-cdn.alpinelinux.org/alpine/v3.16/community",
-        "https://dl-cdn.alpinelinux.org/alpine/v3.15/main",
-        "https://dl-cdn.alpinelinux.org/alpine/v3.15/community",
-    ];
+    // Reuse the search_package function to find available versions
+    let search_options = SearchOptions {
+        query: options.package.clone(),
+        repository: None, // Search across all repositories
+    };
 
-    // Search for the exact package version across all repositories
-    let mut found_versions: Vec<(String, String)> = Vec::new(); // (version, repository)
-    let mut matched_repository: Option<String> = None;
+    let search_result = search_package(&search_options)?;
 
-    for repo in &repositories {
-        if matched_repository.is_some() {
-            break; // Stop searching if we already found the exact version
-        }
+    // Parse the search output to find available versions
+    let mut found_versions: Vec<String> = Vec::new();
+    let mut version_found = false;
 
-        let mut search_cmd = std::process::Command::new("apk");
-        search_cmd.arg("search");
-        search_cmd.arg("--exact");
-        search_cmd.arg("--repository");
-        search_cmd.arg(repo);
-        search_cmd.arg(&options.package);
+    if let Some(stdout) = &search_result.stdout {
+        for line in stdout.lines() {
+            // Skip fetch messages and empty lines
+            if line.starts_with("fetch ") || line.trim().is_empty() {
+                continue;
+            }
 
-        if let Ok(output) = search_cmd.output() {
-            if output.status.success() {
-                let stdout = String::from_utf8_lossy(&output.stdout);
-                for line in stdout.lines() {
-                    // Parse package-version from output
-                    // Format is typically: package-name-version
-                    if let Some(version_str) = line.strip_prefix(&format!("{}-", options.package)) {
-                        found_versions.push((version_str.to_string(), repo.to_string()));
+            // Parse package-version from output
+            // Format is typically: package-name-version
+            if let Some(version_str) = line.strip_prefix(&format!("{}-", options.package)) {
+                found_versions.push(version_str.to_string());
 
-                        // Check for exact version match
-                        if version_str == options.version {
-                            matched_repository = Some(repo.to_string());
-                        }
-                    }
+                // Check for exact version match
+                if version_str == options.version {
+                    version_found = true;
                 }
             }
         }
     }
 
     // If exact version match found, install it
-    if let Some(repo) = matched_repository {
+    if version_found {
         let mut install_cmd = std::process::Command::new("apk");
         install_cmd.arg("add");
-        install_cmd.arg("--repository");
-        install_cmd.arg(&repo);
+
+        // Add all repositories - apk will find the right one
+        for repo in SEARCH_REPOSITORIES {
+            install_cmd.arg("--repository");
+            install_cmd.arg(repo);
+        }
+
         install_cmd.arg(format!("{}={}", options.package, options.version));
 
         let output = install_cmd.output().map_err(|err| {
@@ -756,28 +797,26 @@ fn install_package_with_version(options: &InstallVersionOptions) -> Result<ExecR
                 "package_name": options.package,
                 "requested_version": options.version,
                 "error_type": "package_not_found",
-                "searched_repositories": repositories
+                "searched_repositories": SEARCH_REPOSITORIES
             })),
         ));
     }
 
-    // Remove duplicates and format available versions
+    // Remove duplicates and sort available versions
     found_versions.sort();
-    found_versions.dedup_by(|a, b| a.0 == b.0);
-
-    let available_versions: Vec<String> = found_versions.iter().map(|(v, _)| v.clone()).collect();
+    found_versions.dedup();
 
     Err(McpError::internal_error(
         format!(
             "Version '{}' of package '{}' not found. Available versions: {}",
             options.version,
             options.package,
-            available_versions.join(", ")
+            found_versions.join(", ")
         ),
         Some(serde_json::json!({
             "package_name": options.package,
             "requested_version": options.version,
-            "available_versions": available_versions,
+            "available_versions": found_versions,
             "error_type": "version_not_found"
         })),
     ))
