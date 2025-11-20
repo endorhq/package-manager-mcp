@@ -515,31 +515,29 @@ struct ExecResult {
     status: i32,
 }
 
-/// Get the list of repositories to search across
-fn get_search_repositories() -> Vec<&'static str> {
-    vec![
-        "https://dl-cdn.alpinelinux.org/alpine/edge/main",
-        "https://dl-cdn.alpinelinux.org/alpine/edge/community",
-        // Current version
-        "https://dl-cdn.alpinelinux.org/alpine/v3.22/main",
-        "https://dl-cdn.alpinelinux.org/alpine/v3.22/community",
-        // Older versions
-        "https://dl-cdn.alpinelinux.org/alpine/v3.21/main",
-        "https://dl-cdn.alpinelinux.org/alpine/v3.21/community",
-        "https://dl-cdn.alpinelinux.org/alpine/v3.20/main",
-        "https://dl-cdn.alpinelinux.org/alpine/v3.20/community",
-        "https://dl-cdn.alpinelinux.org/alpine/v3.19/main",
-        "https://dl-cdn.alpinelinux.org/alpine/v3.19/community",
-        "https://dl-cdn.alpinelinux.org/alpine/v3.18/main",
-        "https://dl-cdn.alpinelinux.org/alpine/v3.18/community",
-        "https://dl-cdn.alpinelinux.org/alpine/v3.17/main",
-        "https://dl-cdn.alpinelinux.org/alpine/v3.17/community",
-        "https://dl-cdn.alpinelinux.org/alpine/v3.16/main",
-        "https://dl-cdn.alpinelinux.org/alpine/v3.16/community",
-        "https://dl-cdn.alpinelinux.org/alpine/v3.15/main",
-        "https://dl-cdn.alpinelinux.org/alpine/v3.15/community",
-    ]
-}
+/// List of repositories to search across
+const SEARCH_REPOSITORIES: &[&str] = &[
+    "https://dl-cdn.alpinelinux.org/alpine/edge/main",
+    "https://dl-cdn.alpinelinux.org/alpine/edge/community",
+    // Current version
+    "https://dl-cdn.alpinelinux.org/alpine/v3.22/main",
+    "https://dl-cdn.alpinelinux.org/alpine/v3.22/community",
+    // Older versions
+    "https://dl-cdn.alpinelinux.org/alpine/v3.21/main",
+    "https://dl-cdn.alpinelinux.org/alpine/v3.21/community",
+    "https://dl-cdn.alpinelinux.org/alpine/v3.20/main",
+    "https://dl-cdn.alpinelinux.org/alpine/v3.20/community",
+    "https://dl-cdn.alpinelinux.org/alpine/v3.19/main",
+    "https://dl-cdn.alpinelinux.org/alpine/v3.19/community",
+    "https://dl-cdn.alpinelinux.org/alpine/v3.18/main",
+    "https://dl-cdn.alpinelinux.org/alpine/v3.18/community",
+    "https://dl-cdn.alpinelinux.org/alpine/v3.17/main",
+    "https://dl-cdn.alpinelinux.org/alpine/v3.17/community",
+    "https://dl-cdn.alpinelinux.org/alpine/v3.16/main",
+    "https://dl-cdn.alpinelinux.org/alpine/v3.16/community",
+    "https://dl-cdn.alpinelinux.org/alpine/v3.15/main",
+    "https://dl-cdn.alpinelinux.org/alpine/v3.15/community",
+];
 
 fn install_package(install_options: &InstallOptions) -> Result<ExecResult, McpError> {
     let mut command = std::process::Command::new("apk");
@@ -645,7 +643,7 @@ fn search_package(search_options: &SearchOptions) -> Result<ExecResult, McpError
         command.arg(repository);
     } else {
         // Search across all repositories
-        for repo in get_search_repositories() {
+        for repo in SEARCH_REPOSITORIES {
             command.arg("--repository");
             command.arg(repo);
         }
@@ -752,12 +750,11 @@ fn install_package_with_version(options: &InstallVersionOptions) -> Result<ExecR
 
     // If exact version match found, install it
     if version_found {
-        let repositories = get_search_repositories();
         let mut install_cmd = std::process::Command::new("apk");
         install_cmd.arg("add");
 
         // Add all repositories - apk will find the right one
-        for repo in &repositories {
+        for repo in SEARCH_REPOSITORIES {
             install_cmd.arg("--repository");
             install_cmd.arg(repo);
         }
@@ -791,7 +788,6 @@ fn install_package_with_version(options: &InstallVersionOptions) -> Result<ExecR
 
     // Version not found - return error with available versions
     if found_versions.is_empty() {
-        let repositories = get_search_repositories();
         return Err(McpError::internal_error(
             format!(
                 "Package '{}' not found in any searched repository",
@@ -801,7 +797,7 @@ fn install_package_with_version(options: &InstallVersionOptions) -> Result<ExecR
                 "package_name": options.package,
                 "requested_version": options.version,
                 "error_type": "package_not_found",
-                "searched_repositories": repositories
+                "searched_repositories": SEARCH_REPOSITORIES
             })),
         ));
     }
