@@ -50,7 +50,7 @@ impl ServerHandler for Apk {
                                 },
                             },
                             "required": ["package_name"]
-                        })).unwrap(),
+                        })).map_err(|e| McpError::internal_error(format!("failed to parse install_package schema: {e}"), None))?,
                     ),
                     annotations: Some(ToolAnnotations {
                         idempotent_hint: Some(true),
@@ -75,7 +75,7 @@ impl ServerHandler for Apk {
                                 },
                             },
                             "required": ["package_name", "version"]
-                        })).unwrap(),
+                        })).map_err(|e| McpError::internal_error(format!("failed to parse install_package_with_version schema: {e}"), None))?,
                     ),
                     annotations: Some(ToolAnnotations {
                         idempotent_hint: Some(true),
@@ -91,7 +91,7 @@ impl ServerHandler for Apk {
                             "type": "object",
                             "properties": {},
                             "required": []
-                        })).unwrap(),
+                        })).map_err(|e| McpError::internal_error(format!("failed to parse refresh_repositories schema: {e}"), None))?,
                     ),
                     annotations: Some(ToolAnnotations {
                         idempotent_hint: Some(true),
@@ -107,7 +107,7 @@ impl ServerHandler for Apk {
                             "type": "object",
                             "properties": {},
                             "required": []
-                        })).unwrap(),
+                        })).map_err(|e| McpError::internal_error(format!("failed to parse list_installed_packages schema: {e}"), None))?,
                     ),
                     annotations: Some(ToolAnnotations {
                         idempotent_hint: Some(true),
@@ -132,7 +132,7 @@ impl ServerHandler for Apk {
                                 },
                             },
                             "required": ["query"]
-                        })).unwrap(),
+                        })).map_err(|e| McpError::internal_error(format!("failed to parse search_package schema: {e}"), None))?,
                     ),
                     annotations: Some(ToolAnnotations {
                         idempotent_hint: Some(true),
@@ -159,7 +159,9 @@ impl ServerHandler for Apk {
                         args.get("package_name")
                             .and_then(|package_name| package_name.as_str())
                     })
-                    .expect("mandatory argument")
+                    .ok_or_else(|| {
+                        McpError::invalid_params("missing required parameter: package_name", None)
+                    })?
                     .to_string();
 
                 let repository = request
@@ -237,14 +239,18 @@ impl ServerHandler for Apk {
                         args.get("package_name")
                             .and_then(|package_name| package_name.as_str())
                     })
-                    .expect("mandatory argument")
+                    .ok_or_else(|| {
+                        McpError::invalid_params("missing required parameter: package_name", None)
+                    })?
                     .to_string();
 
                 let version = request
                     .arguments
                     .as_ref()
                     .and_then(|args| args.get("version").and_then(|version| version.as_str()))
-                    .expect("mandatory argument")
+                    .ok_or_else(|| {
+                        McpError::invalid_params("missing required parameter: version", None)
+                    })?
                     .to_string();
 
                 let install_version_options = InstallVersionOptions {
@@ -397,7 +403,9 @@ impl ServerHandler for Apk {
                     .arguments
                     .as_ref()
                     .and_then(|args| args.get("query").and_then(|query| query.as_str()))
-                    .expect("mandatory argument")
+                    .ok_or_else(|| {
+                        McpError::invalid_params("missing required parameter: query", None)
+                    })?
                     .to_string();
 
                 let repository = request
@@ -573,7 +581,7 @@ fn install_package(install_options: &InstallOptions) -> Result<ExecResult, McpEr
         } else {
             None
         },
-        status: command.status.code().expect("exit code is expected"),
+        status: command.status.code().unwrap_or(-1),
     })
 }
 
@@ -601,7 +609,7 @@ fn refresh_repositories() -> Result<ExecResult, McpError> {
         } else {
             None
         },
-        status: command.status.code().expect("exit code is expected"),
+        status: command.status.code().unwrap_or(-1),
     })
 }
 
@@ -629,7 +637,7 @@ fn list_installed_packages() -> Result<ExecResult, McpError> {
         } else {
             None
         },
-        status: command.status.code().expect("exit code is expected"),
+        status: command.status.code().unwrap_or(-1),
     })
 }
 
@@ -677,7 +685,7 @@ fn search_package(search_options: &SearchOptions) -> Result<ExecResult, McpError
         } else {
             None
         },
-        status: command.status.code().expect("exit code is expected"),
+        status: command.status.code().unwrap_or(-1),
     })
 }
 
@@ -782,7 +790,7 @@ fn install_package_with_version(options: &InstallVersionOptions) -> Result<ExecR
             } else {
                 None
             },
-            status: output.status.code().expect("exit code is expected"),
+            status: output.status.code().unwrap_or(-1),
         });
     }
 
