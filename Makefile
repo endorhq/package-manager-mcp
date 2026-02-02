@@ -27,4 +27,4 @@ run-%: build
 
 .PHONY: inspector-%
 inspector-%: run-%
-	HOST=0.0.0.0 DANGEROUSLY_OMIT_AUTH=true npx @modelcontextprotocol/inspector --config .dev-mcp.json --server apk
+	HOST=0.0.0.0 DANGEROUSLY_OMIT_AUTH=true npx @modelcontextprotocol/inspector --config .dev-mcp.json --server package-manager
