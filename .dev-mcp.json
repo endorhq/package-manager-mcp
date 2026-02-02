@@ -1,6 +1,6 @@
 {
   "mcpServers": {
-    "apk": {
+    "package-manager": {
       "type": "url",
       "url": "http://localhost:8090/mcp"
     }

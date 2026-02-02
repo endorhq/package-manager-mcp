@@ -9,7 +9,9 @@ use tracing_subscriber::{
     {self},
 };
 
-mod apk;
+mod backend;
+
+use backend::{PackageManagerHandler, apk::Apk, apt::Apt};
 
 #[derive(Parser, Debug)]
 #[command(version, about, long_about = None)]
@@ -32,15 +34,29 @@ async fn main() -> Result<()> {
         .with(tracing_subscriber::fmt::layer())
         .init();
 
-    let package_manager_backend = apk::Apk::new();
+    // Auto-detect OS and create appropriate backend
+    let router = if std::path::Path::new("/etc/alpine-release").exists() {
+        tracing::info!("Detected Alpine Linux, using APK backend");
+        let handler = PackageManagerHandler::new(Apk::new());
+        let service = StreamableHttpService::new(
+            move || Ok(handler.clone()),
+            LocalSessionManager::default().into(),
+            Default::default(),
+        );
+        axum::Router::new().nest_service("/mcp", service)
+    } else if std::path::Path::new("/etc/debian_version").exists() {
+        tracing::info!("Detected Debian/Debian-derivative, using APT backend");
+        let handler = PackageManagerHandler::new(Apt::new());
+        let service = StreamableHttpService::new(
+            move || Ok(handler.clone()),
+            LocalSessionManager::default().into(),
+            Default::default(),
+        );
+        axum::Router::new().nest_service("/mcp", service)
+    } else {
+        anyhow::bail!("Unsupported OS: neither Alpine nor Debian detected");
+    };
 
-    let service = StreamableHttpService::new(
-        move || Ok(package_manager_backend.clone()),
-        LocalSessionManager::default().into(),
-        Default::default(),
-    );
-
-    let router = axum::Router::new().nest_service("/mcp", service);
     let tcp_listener =
         tokio::net::TcpListener::bind(format!("{}:{}", args.host, args.port)).await?;
     let _ = axum::serve(tcp_listener, router)
